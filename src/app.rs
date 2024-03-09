@@ -7,6 +7,8 @@ pub struct SolveStats {
     scramble: String,
     timestamp: String,
     comment: String,
+    plus2: bool,
+    dnf: bool,
 }
 
 impl Default for SolveStats {
@@ -16,6 +18,8 @@ impl Default for SolveStats {
             scramble: "".to_string(),
             timestamp: "".to_string(),
             comment: "".to_string(),
+            plus2: false,
+            dnf: false,
         }
     }
 }
@@ -29,41 +33,50 @@ fn round(num: f64, decimals: usize) -> f64 {
     (num * factor).round() / factor
 }
 
-fn average(solves: &Vec<SolveStats>, number: usize, prec: usize) -> f64 {
-    let mut latest: Vec<SolveStats> = solves.get(0..=number).unwrap().to_vec();
+fn average(solves: &Vec<SolveStats>, number: usize, prec: usize) -> String {
+    let latest: Vec<SolveStats> = solves.get(0..=number).unwrap().to_vec();
     let mut max_val: f64 = latest[0].time.parse::<f64>().unwrap();
     let mut min_val: f64 = latest[0].time.parse::<f64>().unwrap();
+    let mut dnfs = 0;
+    
     for solve in &latest {
-        let parsed = solve.time.parse::<f64>().unwrap();
-        if parsed > max_val {
-            max_val = solve.time.parse::<f64>().unwrap();
-        }
-        if parsed < min_val {
-            min_val = solve.time.parse::<f64>().unwrap();
+        if solve.dnf {
+            dnfs += 1;
+        } else {
+            let parsed = solve.time.parse::<f64>().unwrap();
+            if parsed > max_val {
+                max_val = parsed;
+            }
+            if parsed < min_val {
+                min_val = parsed;
+            }
         }
     }
-    latest.remove(
-        latest
-            .iter()
-            .position(|x| *x.time == max_val.to_string())
-            .unwrap(),
-    );
-    latest.remove(
-        latest
-            .iter()
-            .position(|x| *x.time == min_val.to_string())
-            .unwrap(),
-    );
-    let parsed: Vec<f64> = latest
-        .iter()
-        .map(|x| x.time.parse::<f64>().unwrap())
-        .collect();
+    
+    if dnfs >= 2 {
+        return "DNF".to_string();
+    }
+    
     let mut sum: f64 = 0.0;
-    for value in &parsed {
-        sum += value;
+    let mut count = 0;
+    for solve in &latest {
+        if !solve.dnf {
+            let parsed = solve.time.parse::<f64>().unwrap();
+            if parsed != max_val && parsed != min_val {
+                sum += parsed;
+                count += 1;
+            }
+        }
     }
-    round(sum / parsed.len() as f64, prec)
+    
+    if dnfs == 1 {
+        sum = sum + max_val;
+        count += 1;
+    }
+    
+    round(sum / count as f64, prec).to_string()
 }
+
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -100,12 +113,11 @@ pub struct Cubism {
     button: [u8; 3],
     text: [u8; 3],
     outline: [u8; 3],
+    titlebar: [u8; 3],
     outline_w: f32,
     show_solve: bool,
-    selected_solve: SolveStats,
     scramble_text: String,
     solve_info: bool,
-    solve_info_solve: SolveStats,
     solve_info_copy: String,
     solve_index: usize,
 }
@@ -115,9 +127,7 @@ impl Default for Cubism {
         Self {
             solve_info_copy: "".to_string(),
             solve_info: false,
-            solve_info_solve: SolveStats::default(),
             scramble_text: "".to_string(),
-            selected_solve: SolveStats::default(),
             show_solve: false,
             time: "0.00".to_string(),
             scramble: "".to_string(),
@@ -149,6 +159,7 @@ impl Default for Cubism {
             background: [255, 255, 255],
             window: [255, 255, 255],
             button: [255, 255, 255],
+            titlebar: [255, 255, 255],
             outline: [0, 0, 0],
             text: [0, 0, 0],
             outline_w: 0.5,
@@ -229,38 +240,42 @@ impl Cubism {
         let len = self.solves.len();
         let solves = &self.solves;
         if len > 4 {
-            self.ao5 = average(&solves, 4, self.ao5_prec).to_string();
+            self.ao5 = average(&solves, 4, self.ao5_prec);
         }
         if len > 11 {
-            self.ao12 = average(&solves, 11, self.ao5_prec).to_string();
+            self.ao12 = average(&solves, 11, self.ao5_prec);
         }
         if len > 24 {
-            self.ao25 = average(&solves, 24, self.ao5_prec).to_string();
+            self.ao25 = average(&solves, 24, self.ao5_prec);
         }
         if len > 49 {
-            self.ao50 = average(&solves, 49, self.ao5_prec).to_string();
+            self.ao50 = average(&solves, 49, self.ao5_prec);
         }
         if len > 99 {
-            self.ao100 = average(&solves, 99, self.ao5_prec).to_string();
+            self.ao100 = average(&solves, 99, self.ao5_prec);
         }
         if len > 499 {
-            self.ao500 = average(&solves, 499, self.ao5_prec).to_string();
+            self.ao500 = average(&solves, 499, self.ao5_prec);
         }
         if len > 999 {
-            self.ao1000 = average(&solves, 999, self.ao5_prec).to_string();
+            self.ao1000 = average(&solves, 999, self.ao5_prec);
         }
         if len > 1999 {
-            self.ao2000 = average(&solves, 1999, self.ao5_prec).to_string();
+            self.ao2000 = average(&solves, 1999, self.ao5_prec);
         }
         if len > 4999 {
-            self.ao5000 = average(&solves, 4999, self.ao5_prec).to_string();
+            self.ao5000 = average(&solves, 4999, self.ao5_prec);
         }
     }
     fn redraw_solves(&mut self) {
         self.fmt_solves = vec![];
         for solve in &self.solves {
+            if solve.dnf == true {
+                self.fmt_solves.push("DNF".to_string());
+            } else {
             self.fmt_solves
                 .push(round(solve.time.parse::<f64>().unwrap(), self.solves_prec).to_string());
+            }
         }
     }
 }
@@ -308,9 +323,9 @@ impl eframe::App for Cubism {
                 },
                 open: egui::style::WidgetVisuals {
                     weak_bg_fill: egui::Color32::from_rgb(
-                        self.window[0],
-                        self.window[1],
-                        self.window[2],
+                        self.titlebar[0],
+                        self.titlebar[1],
+                        self.titlebar[2],
                     ),
                     ..egui::Visuals::light().widgets.open
                 },
@@ -407,25 +422,28 @@ impl eframe::App for Cubism {
                 ui.heading("Solves");
                 egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
                     for i in 0..self.solves.len() {
-                        if ui
-                            .button(format!(
+                        let text: String;
+                        if self.solves[i].dnf == true {
+                            text = "Solve: DNF    ".to_string();
+                        } else {
+                            text = format!(
                                 "Solve: {}    ",
                                 round(self.solves[i].time.parse().unwrap(), self.solves_prec)
-                            ))
-                            .clicked()
-                            == true
+                            )
+                        }
+                        if ui
+                            .button(text).clicked() == true
                         {
                             self.solve_info = true;
-                            self.solve_info_solve = self.solves[i].clone();
                             self.solve_index = i;
                             self.solve_info_copy = format!(
                                 "{} @ {} {}",
                                 round(
-                                    self.solve_info_solve.time.parse().unwrap(),
+                                    self.solves[i].time.parse().unwrap(),
                                     self.solves_prec
                                 ),
-                                self.solve_info_solve.scramble,
-                                self.solve_info_solve.comment
+                                self.solves[i].scramble,
+                                self.solves[i].comment
                             );
                         }
                     }
@@ -456,6 +474,7 @@ impl eframe::App for Cubism {
                             self.timeron = false;
                             self.solves = vec![];
                             self.fmt_solves = vec![];
+                            self.show_solve = false;
                         }
                         if ui.button("Import from CSTimer").clicked() == true {
                             if self.importing == true {
@@ -476,7 +495,7 @@ impl eframe::App for Cubism {
                         });
                         ui.horizontal(|ui| {
                             ui.label("Timer Precision: ");
-                            ui.add(egui::widgets::Slider::new(&mut self.prec, 0..=6));
+                            ui.add(egui::widgets::Slider::new(&mut self.prec, 0..=3));
                             if self.prec != self.old_prec {
                                 if self.solves.len() != 0 {
                                     self.time = round(self.solves[0].time.parse::<f64>().unwrap(), self.prec).to_string();
@@ -518,6 +537,10 @@ impl eframe::App for Cubism {
                             ui.label("Outline Width");
                             ui.add(egui::widgets::Slider::new(&mut self.outline_w, 0.0..=1.5));
                         });
+                        ui.horizontal(|ui| {
+                            ui.label("Title Bar Colour");
+                            ui.color_edit_button_srgb(&mut self.titlebar);
+                        })
 
                     });
                 }
@@ -552,8 +575,7 @@ impl eframe::App for Cubism {
                                         }
                                         self.redraw_solves();
                                         self.refresh_averages();
-                                        self.selected_solve = self.solves[0].clone();
-                                        self.scramble_text = format!("{} @ {}", round(self.selected_solve.time.parse().unwrap(), self.solves_prec), self.selected_solve.scramble);
+                                        self.scramble_text = format!("{} @ {}", round(self.solves[0].time.parse().unwrap(), self.solves_prec), self.solves[0].scramble);
                                     } else {
                                         self.imported_fail = "Failed to import data!".to_string();
                                     }
@@ -584,34 +606,71 @@ impl eframe::App for Cubism {
                 }
                 if self.show_solve == true {
                     egui::Window::new("Solve Stats").show(ctx, |ui| {
-                        let solve = self.selected_solve.clone();
-                        ui.heading(format!("{}", round(solve.time.parse().unwrap(), self.solves_prec)));
-                        ui.label(format!("{}", solve.scramble));
+                        let displayed: String;
+                        if self.solves[0].dnf == true {
+                            displayed = "DNF".to_string();
+                        } else {
+                            displayed = round(self.solves[0].time.parse().unwrap(), self.solves_prec).to_string();
+                        }
+                        ui.heading(format!("{}", displayed));
+                        ui.label(format!("{}", self.solves[0].scramble));
+                        ui.horizontal(|ui| {
+                            if ui.button("+2").clicked() {
+                                if !self.solves[0].plus2 {
+                                    self.solves[0].plus2 = true;
+                                    self.solves[0].dnf = false;
+                                    self.solves[0].time = (self.solves[0].time.parse::<f64>().unwrap() + 2.0).to_string();
+                                    self.scramble_text = format!("{}+2 @ {}", round(self.solves[0].clone().time.parse::<f64>().unwrap() - 2.0, self.prec), self.solves[0].scramble);
+                                    self.refresh_averages();
+                                }
+                            } 
+                            if ui.button("DNF").clicked() {
+                                if !self.solves[0].dnf {
+                                    if self.solves[0].plus2 {
+                                        self.solves[0].time = (self.solves[0].time.parse::<f64>().unwrap() - 2.0).to_string();
+                                    }
+                                    self.solves[0].plus2 = false;
+                                    self.solves[0].dnf = true;
+                                    self.scramble_text = format!("DNF [{}] @ {}", round(self.solves[0].time.parse().unwrap(), self.prec), self.solves[0].scramble);
+                                    self.refresh_averages();
+                                }
+                            }
+                            if ui.button("OK").clicked() {
+                                if self.solves[0].plus2 {
+                                    self.solves[0].time = (self.solves[0].time.parse::<f64>().unwrap() - 2.0).to_string();
+                                }
+                                self.solves[0].plus2 = false;
+                                self.solves[0].dnf = false;
+                                self.scramble_text = format!("{} @ {}", round(self.solves[0].time.parse().unwrap(), self.prec), self.solves[0].scramble);
+                                self.refresh_averages();
+                            }
+                        });
                         // Time
                         ui.horizontal(|ui| {
-                            ui.label("Comment: ");
-                            ui.text_edit_singleline(&mut self.selected_solve.comment);
-                        });
-                        ui.horizontal(|ui| {
                             ui.label("Copyable:  ");
-                            ui.text_edit_singleline(&mut self.scramble_text);
+                            ui.text_edit_singleline(&mut self.scramble_text.as_str());
                         });
                     });
                 }
                 if self.solve_info == true {
                     egui::Window::new("Solve Info").show(ctx, |ui| {
-                        ui.heading(format!("{}", round(self.solve_info_solve.time.parse().unwrap(), self.solves_prec)));
-                        ui.label(format!("Scramble: {}", self.solve_info_solve.scramble));
+                        ui.heading(format!("{}", round(self.solves[self.solve_index].time.parse().unwrap(), self.solves_prec)));
+                        if self.solves[self.solve_index].dnf == true {
+                            ui.label("Did not finish");
+                        }
+                        if self.solves[self.solve_index].plus2 == true {
+                            ui.label("+2 Penalty");
+                        }
+                        ui.label(format!("Scramble: {}", self.solves[self.solve_index].scramble));
                         ui.horizontal(|ui| {
                             ui.label("Comment: ");
                             ui.text_edit_singleline(&mut self.solves[self.solve_index].comment);
                         });
                         ui.horizontal(|ui| {
                             ui.label("Copyable:  ");
-                            ui.text_edit_singleline(&mut self.solve_info_copy);
+                            ui.text_edit_singleline(&mut self.solve_info_copy.as_str());
                         });
                         if ui.button("Close").clicked() == true {
-                            self.solve_info_solve = SolveStats::default();
                             self.solve_info_copy = "".to_string();
                             self.solve_info = false;
                         }
@@ -656,8 +715,7 @@ impl eframe::App for Cubism {
                                             self.fmt_solves.insert(0, solvetime.to_string());
                                             self.refresh_averages();
                                             self.scramble = self.make_scramble();
-                                            self.selected_solve = self.solves[0].clone();
-                                            self.scramble_text = format!("{} @ {}", round(self.selected_solve.time.parse().unwrap(), self.prec), self.selected_solve.scramble);
+                                            self.scramble_text = format!("{} @ {}", round(self.solves[0].time.parse().unwrap(), self.prec), self.solves[0].scramble);
                                             self.show_solve = true;
                                         }
                                     } else if key == egui::Key::Escape {
