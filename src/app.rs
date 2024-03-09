@@ -436,15 +436,33 @@ impl eframe::App for Cubism {
                         {
                             self.solve_info = true;
                             self.solve_index = i;
-                            self.solve_info_copy = format!(
-                                "{} @ {} {}",
-                                round(
-                                    self.solves[i].time.parse().unwrap(),
-                                    self.solves_prec
-                                ),
-                                self.solves[i].scramble,
-                                self.solves[i].comment
-                            );
+                            if self.solves[i].plus2 == true {
+                                self.solve_info_copy = format!(
+                                "{}+2 @ {} {}",
+                                    round(self.solves[i].time.parse().unwrap(),
+                                        self.solves_prec),
+                                    self.solves[i].scramble,
+                                    self.solves[i].comment,
+                                );
+                            } else {
+                                if self.solves[i].dnf == true {
+                                    self.solve_info_copy = format!(
+                                        "DNF [{}] @ {} {}",
+                                        round(self.solves[i].time.parse().unwrap(),
+                                            self.solves_prec),
+                                        self.solves[i].scramble,
+                                        self.solves[i].comment
+                                    );
+                                } else {
+                                    self.solve_info_copy = format!(
+                                    "{}+2 @ {} {}",
+                                        round(self.solves[i].time.parse().unwrap(),
+                                            self.solves_prec),
+                                        self.solves[i].scramble,
+                                        self.solves[i].comment,
+                                    );
+                                }
+                            }
                         }
                     }
                 });
