@@ -310,11 +310,6 @@ impl eframe::App for Cubism {
                         self.button[1],
                         self.button[2],
                     ),
-                    /*bg_fill: egui::Color32::from_rgb(
-                        self.button[0],
-                        self.button[1],
-                        self.button[2],
-                    )*/
                     bg_stroke: egui::Stroke {
                         width: self.outline_w,
                         color: egui::Color32::from_rgb(
