@@ -6,6 +6,7 @@ pub struct SolveStats {
     time: String,
     scramble: String,
     timestamp: String,
+    comment: String,
 }
 
 impl Default for SolveStats {
@@ -14,6 +15,7 @@ impl Default for SolveStats {
             time: "".to_string(),
             scramble: "".to_string(),
             timestamp: "".to_string(),
+            comment: "".to_string(),
         }
     }
 }
@@ -102,11 +104,18 @@ pub struct Cubism {
     show_solve: bool,
     selected_solve: SolveStats,
     scramble_text: String,
+    solve_info: bool,
+    solve_info_solve: SolveStats,
+    solve_info_copy: String,
+    solve_index: usize,
 }
 
 impl Default for Cubism {
     fn default() -> Self {
         Self {
+            solve_info_copy: "".to_string(),
+            solve_info: false,
+            solve_info_solve: SolveStats::default(),
             scramble_text: "".to_string(),
             selected_solve: SolveStats::default(),
             show_solve: false,
@@ -143,6 +152,7 @@ impl Default for Cubism {
             outline: [0, 0, 0],
             text: [0, 0, 0],
             outline_w: 0.5,
+            solve_index: 0,
         }
     }
 }
@@ -396,11 +406,28 @@ impl eframe::App for Cubism {
                 ui.separator();
                 ui.heading("Solves");
                 egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
-                    for solve in &self.fmt_solves {
-                        ui.label(format!(
-                            "Solve: {}    ",
-                            round(solve.parse::<f64>().unwrap(), 3)
-                        ));
+                    for i in 0..self.solves.len() {
+                        if ui
+                            .button(format!(
+                                "Solve: {}    ",
+                                round(self.solves[i].time.parse().unwrap(), self.solves_prec)
+                            ))
+                            .clicked()
+                            == true
+                        {
+                            self.solve_info = true;
+                            self.solve_info_solve = self.solves[i].clone();
+                            self.solve_index = i;
+                            self.solve_info_copy = format!(
+                                "{} @ {} {}",
+                                round(
+                                    self.solve_info_solve.time.parse().unwrap(),
+                                    self.solves_prec
+                                ),
+                                self.solve_info_solve.scramble,
+                                self.solve_info_solve.comment
+                            );
+                        }
                     }
                 });
             });
@@ -410,7 +437,7 @@ impl eframe::App for Cubism {
                 if self.settings_open == true {
                     egui::Window::new("Settings").show(ctx, |ui| {
                         ui.heading("Help");
-                        if ui.button("How to Use").clicked() == true {
+                        if ui.button("About Cubism").clicked() == true {
                             self.used = false;
                         }
                         ui.separator();
@@ -518,6 +545,8 @@ impl eframe::App for Cubism {
                                                 time: total.to_string(),
                                                 timestamp: timestamp(),
                                                 scramble: value[1].as_str().unwrap().to_string(),
+                                                comment: value[2].as_str().unwrap().to_string(),
+                                                ..SolveStats::default()
                                             };
                                             self.solves.insert(0, solve);
                                         }
@@ -542,8 +571,12 @@ impl eframe::App for Cubism {
             }
             if self.timeron == false {
                 if self.used == false {
-                    egui::Window::new("How to use Cubism").show(ctx, |ui| {
+                    egui::Window::new("About Cubism").show(ctx, |ui| {
                         ui.label("Cubism is like CSTimer, but the way you start the timer is different. Press the space bar to start and stop, no need to hold. You cannot record times under 0.25 seconds!");
+                        ui.hyperlink_to(
+                            "Click here for logo credits.",
+                            "https://www.flaticon.com/free-icons/3d-cube",
+                        );
                         if ui.button("I Understand").clicked() == true {
                             self.used = true;
                         }
@@ -555,7 +588,33 @@ impl eframe::App for Cubism {
                         ui.heading(format!("{}", round(solve.time.parse().unwrap(), self.solves_prec)));
                         ui.label(format!("{}", solve.scramble));
                         // Time
-                        ui.text_edit_singleline(&mut self.scramble_text);
+                        ui.horizontal(|ui| {
+                            ui.label("Comment: ");
+                            ui.text_edit_singleline(&mut self.selected_solve.comment);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Copyable:  ");
+                            ui.text_edit_singleline(&mut self.scramble_text);
+                        });
+                    });
+                }
+                if self.solve_info == true {
+                    egui::Window::new("Solve Info").show(ctx, |ui| {
+                        ui.heading(format!("{}", round(self.solve_info_solve.time.parse().unwrap(), self.solves_prec)));
+                        ui.label(format!("Scramble: {}", self.solve_info_solve.scramble));
+                        ui.horizontal(|ui| {
+                            ui.label("Comment: ");
+                            ui.text_edit_singleline(&mut self.solves[self.solve_index].comment);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Copyable:  ");
+                            ui.text_edit_singleline(&mut self.solve_info_copy);
+                        });
+                        if ui.button("Close").clicked() == true {
+                            self.solve_info_solve = SolveStats::default();
+                            self.solve_info_copy = "".to_string();
+                            self.solve_info = false;
+                        }
                     });
                 }
             }
@@ -569,7 +628,7 @@ impl eframe::App for Cubism {
                             let delta = Local::now().signed_duration_since(self.debounce);
                             if delta > TimeDelta::try_milliseconds(250).unwrap() {
                                 self.debounce = Local::now();
-                                if self.importing == false {
+                                if self.importing == false && self.solve_info == false {
                                     if key == egui::Key::Space {
                                         if self.timeron == false {
                                             self.timeron = true;
@@ -588,6 +647,7 @@ impl eframe::App for Cubism {
                                                 time: rawtime.to_string(),
                                                 scramble: self.scramble.clone(),
                                                 timestamp: timestamp(),
+                                                ..SolveStats::default()
                                             };
 
                                             self.solves.insert(0, solve);
