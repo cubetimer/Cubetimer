@@ -1,7 +1,118 @@
 use chrono::{DateTime, Local, TimeDelta};
+use cubesim::{Cube, Move, MoveVariant};
 use rand::Rng;
 use std::collections::HashMap;
 mod scramble;
+
+fn move_string(movement: cubesim::Move) -> &'static str {
+    match movement {
+        Move::U(variant) => {
+            return match variant {
+                MoveVariant::Double => "U2",
+                MoveVariant::Standard => "U",
+                MoveVariant::Inverse => "U'",
+            };
+        },
+        Move::F(variant) => {
+            return match variant {
+                MoveVariant::Double => "F2",
+                MoveVariant::Standard => "F",
+                MoveVariant::Inverse => "F'",
+            };
+        },
+        Move::L(variant) => {
+            return match variant {
+                MoveVariant::Double => "L2",
+                MoveVariant::Standard => "L",
+                MoveVariant::Inverse => "L'",
+            };
+        },
+        Move::R(variant) => {
+            return match variant {
+                MoveVariant::Double => "R2",
+                MoveVariant::Standard => "R",
+                MoveVariant::Inverse => "R'",
+            };
+        },
+        Move::Rw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Rw2",
+                MoveVariant::Standard => "Rw",
+                MoveVariant::Inverse => "Rw'",
+            };
+        },
+        Move::Lw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Lw2",
+                MoveVariant::Standard => "Lw",
+                MoveVariant::Inverse => "Lw'",
+            };
+        },
+        Move::D(variant) => {
+            return match variant {
+                MoveVariant::Double => "D2",
+                MoveVariant::Standard => "D",
+                MoveVariant::Inverse => "D'",
+            };
+        },
+        Move::Fw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Fw2",
+                MoveVariant::Standard => "Fw",
+                MoveVariant::Inverse => "Fw'",
+            };
+        },
+        Move::X(variant) => {
+            return match variant {
+                MoveVariant::Double => "X2",
+                MoveVariant::Standard => "X",
+                MoveVariant::Inverse => "X'",
+            };
+        },
+        Move::Y(variant) => {
+            return match variant {
+                MoveVariant::Double => "Y2",
+                MoveVariant::Standard => "Y",
+                MoveVariant::Inverse => "Y'",
+            };
+        },
+        Move::Z(variant) => {
+            return match variant {
+                MoveVariant::Double => "Z2",
+                MoveVariant::Standard => "Z",
+                MoveVariant::Inverse => "Z'",
+            };
+        },
+        Move::Dw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Dw2",
+                MoveVariant::Standard => "Dw",
+                MoveVariant::Inverse => "Dw'",
+            };
+        },
+        Move::Uw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Uw2",
+                MoveVariant::Standard => "Uw",
+                MoveVariant::Inverse => "Uw'",
+            };
+        },
+        Move::Bw(_, variant) => {
+            return match variant {
+                MoveVariant::Double => "Bw2",
+                MoveVariant::Standard => "Bw",
+                MoveVariant::Inverse => "Bw'",
+            };
+        },
+        Move::B(variant) => {
+            return match variant {
+                MoveVariant::Double => "B2",
+                MoveVariant::Standard => "B",
+                MoveVariant::Inverse => "B'",
+            };
+        },
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Debug)]
 pub struct SolveStats {
@@ -11,6 +122,7 @@ pub struct SolveStats {
     comment: String,
     plus2: bool,
     dnf: bool,
+    solution: String,
 }
 
 impl Default for SolveStats {
@@ -20,10 +132,24 @@ impl Default for SolveStats {
             scramble: "".to_string(),
             timestamp: "".to_string(),
             comment: "".to_string(),
+            solution: "".to_string(),
             plus2: false,
             dnf: false,
         }
     }
+}
+
+fn solve(scramble: String) -> String {
+    let moves = cubesim::parse_scramble(scramble);
+    let cube = cubesim::FaceletCube::new(3);
+    let cube = cube.apply_moves(&moves);
+    let solution = cubesim::solve(&cube).unwrap();
+    let mut result = String::new();
+    for movement in solution {
+        result.push_str(format!("{} ", move_string(movement).to_string()).as_str());
+    }
+    result
+
 }
 
 // State
@@ -80,13 +206,17 @@ pub struct State {
     scramble_len: i32,
     scramble_len_old: i32,
     stats_open: bool,
-    script: String,
+    solution: String,
+    c_scramble: String,
+    c_solution: String,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            script: "".to_string(),
+            c_scramble: "".to_string(),
+            c_solution: "".to_string(),
+            solution: "".to_string(),
             scramble_len: 23,
             scramble_len_old: 23,
             widget: [150, 150, 150],
@@ -530,6 +660,27 @@ impl eframe::App for Cubism {
                         }
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Open Solve Stats: ");
+                    if ui.radio(self.state.show_solve_info, "").clicked() {
+                        if self.state.show_solve_info == true {
+                            self.state.show_solve_info = false;
+                        } else {
+                            self.state.show_solve_info = true;
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Open Tools: ");
+                    if ui.radio(self.state.show_tools, "").clicked() {
+                        if self.state.show_tools == true {
+                            self.state.show_tools = false;
+                        } else {
+                            self.state.show_tools = true;
+                        }
+                    }
+                });
+
                 ui.separator();
                 ui.heading("Solves");
                 egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
@@ -645,26 +796,6 @@ impl eframe::App for Cubism {
                             if self.state.solves_prec != self.state.old_solves_prec {
                                 self.redraw_solves();
                                 self.state.old_solves_prec = self.state.solves_prec;
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Show Solve Stats: ");
-                            if ui.radio(self.state.show_solve_info, "").clicked() {
-                                if self.state.show_solve_info == true {
-                                    self.state.show_solve_info = false;
-                                } else {
-                                    self.state.show_solve_info = true;
-                                }
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("Show Tools: ");
-                            if ui.radio(self.state.show_tools, "").clicked() {
-                                if self.state.show_tools == true {
-                                    self.state.show_tools = false;
-                                } else {
-                                    self.state.show_tools = true;
-                                }
                             }
                         });
                         ui.horizontal(|ui| {
@@ -891,6 +1022,9 @@ impl eframe::App for Cubism {
                             }
                         });
                         ui.label(format!("Scramble: {}", self.state.solves[self.state.solve_index].scramble));
+                        if self.state.solves[self.state.solve_index].solution != "".to_string() {
+                            ui.label(format!("Solution: {}", self.state.solves[self.state.solve_index].solution));
+                        }
                         ui.horizontal(|ui| {
                             ui.label("Comment: ");
                             ui.text_edit_singleline(&mut self.state.solves[self.state.solve_index].comment);
@@ -912,7 +1046,8 @@ impl eframe::App for Cubism {
                                 .selected_text(&self.state.current_tool)
                                 .show_ui(ui, |ui| {
                                     ui.selectable_value(&mut self.state.current_tool, "Plot Times".to_string(), "Plot Times");
-                                    ui.selectable_value(&mut self.state.current_tool, "Script".to_string(), "Script")
+                                    ui.selectable_value(&mut self.state.current_tool, "Solve".to_string(), "Solve");
+                                    ui.selectable_value(&mut self.state.current_tool, "Custom Solve".to_string(), "Custom Solve");
                                 });
                         });
                         if self.state.current_tool == "Plot Times".to_string() {
@@ -925,13 +1060,24 @@ impl eframe::App for Cubism {
                                 ui.add(egui::Slider::new(&mut self.state.plot_aspect_ratio, 1.0..=6.0));
                             });
                         }
-                        if self.state.current_tool == "Script".to_string() {
+                        if self.state.current_tool == "Solve".to_string() {
                             ui.separator();
-                            ui.heading("Script");
-                            ui.label("You can access solves by accessing the DATA dictionary");
-                            ui.text_edit_multiline(&mut self.state.script);
-                            if ui.button("Run").clicked() {
+                            ui.heading("Solve");
+                            ui.label("Solve the current Rubik's cube scramble in a low amount of moves");
+                            if ui.button("Solve").clicked() {
+                                self.state.solution = solve(self.state.scramble.clone());
                             }
+                            ui.label(format!("Solution: {}", self.state.solution));
+                        }
+                        if self.state.current_tool == "Custom Solve".to_string() {
+                            ui.separator();
+                            ui.heading("Custom Solve");
+                            ui.label("Input a scramble and the solver will propose a solution!");
+                            ui.text_edit_singleline(&mut self.state.c_scramble);
+                            if ui.button("Solve").clicked() {
+                                self.state.c_solution = solve(self.state.c_scramble.clone());
+                            }
+                            ui.label(format!("Solution: {}", self.state.c_solution));
                         }
                     });
                 }
@@ -978,7 +1124,7 @@ impl eframe::App for Cubism {
                             let delta = Local::now().signed_duration_since(self.state.debounce);
                             if delta > TimeDelta::try_milliseconds(250).unwrap() {
                                 self.state.debounce = Local::now();
-                                if self.state.importing == false && self.state.solve_info == false {
+                                if self.state.importing == false && self.state.solve_info == false && self.state.current_tool != "Custom Solve".to_string() {
                                     if key == egui::Key::Space {
                                         if self.state.timeron == false {
                                             self.state.timeron = true;
@@ -997,6 +1143,7 @@ impl eframe::App for Cubism {
                                                 time: rawtime.to_string(),
                                                 scramble: self.state.scramble.clone(),
                                                 timestamp: timestamp(),
+                                                solution: solve(self.state.scramble.clone()),
                                                 ..SolveStats::default()
                                             };
 
