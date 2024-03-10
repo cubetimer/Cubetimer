@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local, TimeDelta};
 use rand::Rng;
 use std::collections::HashMap;
+mod scramble;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Debug)]
 pub struct SolveStats {
@@ -76,12 +77,19 @@ pub struct State {
     plot_aspect_ratio: f32,
     name: String,
     widget: [u8; 3],
+    scramble_len: i32,
+    scramble_len_old: i32,
+    stats_open: bool,
+    script: String,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            widget: [45, 45, 45],
+            script: "".to_string(),
+            scramble_len: 23,
+            scramble_len_old: 23,
+            widget: [150, 150, 150],
             show_tools: true,
             plottable: vec![],
             download: true,
@@ -128,6 +136,7 @@ impl Default for State {
             current_tool: "Select Tool".to_string(),
             plot_aspect_ratio: 2.0,
             name: "Default".to_string(),
+            stats_open: false,
         }
     }
 }
@@ -190,6 +199,8 @@ fn average(solves: &Vec<SolveStats>, number: usize, prec: usize) -> String {
 pub struct Cubism {
     state: State,
     sessions: HashMap<String, State>,
+    #[serde(skip)]
+    set_font: bool,
 }
 
 impl Default for Cubism {
@@ -197,6 +208,7 @@ impl Default for Cubism {
         Self {
             sessions: HashMap::new(),
             state: State::default(),
+            set_font: false
         }
     }
 }
@@ -235,7 +247,7 @@ impl Cubism {
         Default::default()
     }
     pub fn calculate_plottable(&mut self) {
-        let mut x: f64 = 1.0;
+        let mut x: f64 = 0.0;
         let mut times: Vec<[f64; 2]> = vec![];
         let mut solves = self.state.solves.clone();
         solves.reverse();
@@ -267,7 +279,7 @@ impl Cubism {
         let mut back = "".to_string();
         let mut scramble: Vec<String> = vec![];
         let mut rng = rand::thread_rng();
-        for _i in 1..23 {
+        for _i in 1..=self.state.scramble_len {
             loop {
                 let option = &options[rng.gen_range(1..options.len())];
                 let character = match option.as_str() {
@@ -344,11 +356,22 @@ impl Cubism {
 }
 
 impl eframe::App for Cubism {
+    fn persist_egui_memory(&self) -> bool {
+        true
+    }
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.set_font == false {
+            let mut definitions = egui::FontDefinitions::default();
+            definitions.font_data.insert("font".to_owned(), egui::FontData::from_static(include_bytes!("../assets/font.ttf")));
+            definitions.families.get_mut(&egui::FontFamily::Proportional).unwrap()
+                .insert(0, "font".to_owned());
+            ctx.set_fonts(definitions);
+            self.set_font = true;
+        }
         ctx.set_visuals(egui::Visuals {
             override_text_color: Some(egui::Color32::from_rgb(
                 self.state.text[0],
@@ -483,37 +506,7 @@ impl eframe::App for Cubism {
                     self.state = new_state;
                 }
                 ui.separator();
-                ui.heading("Statistics");
-                ui.label(format!("Solves: {}", self.state.solves.len()));
-                if self.state.ao5.as_str() != "" {
-                    ui.label(format!("Ao5: {}", self.state.ao5));
-                }
-                if self.state.ao12.as_str() != "" {
-                    ui.label(format!("Ao12: {}", self.state.ao12));
-                }
-                if self.state.ao25.as_str() != "" {
-                    ui.label(format!("Ao25: {}", self.state.ao25));
-                }
-                if self.state.ao50.as_str() != "" {
-                    ui.label(format!("Ao50: {}", self.state.ao50));
-                }
-                if self.state.ao100.as_str() != "" {
-                    ui.label(format!("Ao100: {}", self.state.ao100));
-                }
-                if self.state.ao500.as_str() != "" {
-                    ui.label(format!("Ao500: {}", self.state.ao500));
-                }
-                if self.state.ao1000.as_str() != "" {
-                    ui.label(format!("Ao1000: {}", self.state.ao1000));
-                }
-                if self.state.ao2000.as_str() != "" {
-                    ui.label(format!("Ao2000: {}", self.state.ao2000));
-                }
-                if self.state.ao5000.as_str() != "" {
-                    ui.label(format!("Ao5000: {}", self.state.ao2000));
-                }
-                ui.separator();
-                ui.heading("Settings");
+                ui.heading("View");
                 ui.horizontal(|ui| {
                     ui.label("Open Settings");
                     if ui.radio(self.state.settings_open, "").clicked() {
@@ -527,7 +520,16 @@ impl eframe::App for Cubism {
                         }
                     }
                 });
-
+                ui.horizontal(|ui| {
+                    ui.label("Open Statistics");
+                    if ui.radio(self.state.stats_open, "").clicked() {
+                        if self.state.stats_open == true {
+                            self.state.stats_open = false;
+                        } else {
+                            self.state.stats_open = true;
+                        }
+                    }
+                });
                 ui.separator();
                 ui.heading("Solves");
                 egui::scroll_area::ScrollArea::vertical().show(ui, |ui| {
@@ -544,31 +546,11 @@ impl eframe::App for Cubism {
                                 )
                             )
                         }
-                        if ui.button(text).clicked() == true {
-                            self.state.solve_info = true;
-                            self.state.solve_index = i;
-                            if self.state.solves[i].plus2 == true {
-                                self.state.solve_info_copy = format!(
-                                    "{}+2 @ {} {}",
-                                    round(
-                                        self.state.solves[i].time.parse().unwrap(),
-                                        self.state.solves_prec
-                                    ),
-                                    self.state.solves[i].scramble,
-                                    self.state.solves[i].comment,
-                                );
-                            } else {
-                                if self.state.solves[i].dnf == true {
-                                    self.state.solve_info_copy = format!(
-                                        "DNF [{}] @ {} {}",
-                                        round(
-                                            self.state.solves[i].time.parse().unwrap(),
-                                            self.state.solves_prec
-                                        ),
-                                        self.state.solves[i].scramble,
-                                        self.state.solves[i].comment
-                                    );
-                                } else {
+                        ui.horizontal(|ui| {
+                            if ui.button(text).clicked() == true {
+                                self.state.solve_info = true;
+                                self.state.solve_index = i;
+                                if self.state.solves[i].plus2 == true {
                                     self.state.solve_info_copy = format!(
                                         "{}+2 @ {} {}",
                                         round(
@@ -578,9 +560,32 @@ impl eframe::App for Cubism {
                                         self.state.solves[i].scramble,
                                         self.state.solves[i].comment,
                                     );
+                                } else {
+                                    if self.state.solves[i].dnf == true {
+                                        self.state.solve_info_copy = format!(
+                                            "DNF [{}] @ {} {}",
+                                            round(
+                                                self.state.solves[i].time.parse().unwrap(),
+                                                self.state.solves_prec
+                                            ),
+                                            self.state.solves[i].scramble,
+                                            self.state.solves[i].comment
+                                        );
+                                    } else {
+                                        self.state.solve_info_copy = format!(
+                                            "{}+2 @ {} {}",
+                                            round(
+                                                self.state.solves[i].time.parse().unwrap(),
+                                                self.state.solves_prec
+                                            ),
+                                            self.state.solves[i].scramble,
+                                            self.state.solves[i].comment,
+                                        );
+                                    }
                                 }
                             }
-                        }
+                            ui.label("    ");
+                        });
                     }
                 });
             });
@@ -598,13 +603,15 @@ impl eframe::App for Cubism {
                         }
                         ui.separator();
                         ui.heading("Stats");
-                        if ui.button("Reset Session").clicked() == true {
-                            self.state = State::default();
-                        }
-                        if ui.button("Reset App").clicked() == true {
-                            self.state = State::default();
-                            self.sessions = HashMap::new(); 
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Reset Session").clicked() == true {
+                                self.state = State::default();
+                            }
+                            if ui.button("Reset App").clicked() == true {
+                                self.state = State::default();
+                                self.sessions = HashMap::new(); 
+                            }
+                        });
                         if ui.button("Import from CSTimer").clicked() == true {
                             if self.state.importing == true {
                                 self.state.importing = false;
@@ -641,7 +648,7 @@ impl eframe::App for Cubism {
                             }
                         });
                         ui.horizontal(|ui| {
-                            ui.label("Show Solve Stats");
+                            ui.label("Show Solve Stats: ");
                             if ui.radio(self.state.show_solve_info, "").clicked() {
                                 if self.state.show_solve_info == true {
                                     self.state.show_solve_info = false;
@@ -651,13 +658,21 @@ impl eframe::App for Cubism {
                             }
                         });
                         ui.horizontal(|ui| {
-                            ui.label("Show Tools");
+                            ui.label("Show Tools: ");
                             if ui.radio(self.state.show_tools, "").clicked() {
                                 if self.state.show_tools == true {
                                     self.state.show_tools = false;
                                 } else {
                                     self.state.show_tools = true;
                                 }
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Scramble Length: ");
+                            ui.add(egui::widgets::Slider::new(&mut self.state.scramble_len, 1i32..=40i32));
+                            if self.state.scramble_len_old != self.state.scramble_len {
+                                self.state.scramble = self.make_scramble();
+                                self.state.scramble_len_old = self.state.scramble_len;
                             }
                         });
                         ui.separator();
@@ -799,6 +814,13 @@ impl eframe::App for Cubism {
                                     self.state.scramble_text = format!("{} @ {}", round(self.state.solves[0].time.parse().unwrap(), self.state.solves_prec), self.state.solves[0].scramble);
                                     self.refresh_averages();
                                 }
+                                if ui.button("DEL").clicked() {
+                                    self.state.solves.remove(0);
+                                    self.state.time = round(self.state.solves[0].time.parse().unwrap(), self.state.prec).to_string();
+                                    self.state.show_solve = false;
+                                    self.refresh_averages();
+                                    self.redraw_solves();
+                                }
                             });
                             // Time
                             ui.horizontal(|ui| {
@@ -812,41 +834,61 @@ impl eframe::App for Cubism {
                     egui::Window::new("Solve Info").show(ctx, |ui| {
                         ui.heading(format!("{}", round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.solves_prec)));
                         if self.state.solves[self.state.solve_index].dnf == true {
-                            ui.label("Did not finish");
+                            ui.label("Did Not Finish");
                         }
                         if self.state.solves[self.state.solve_index].plus2 == true {
                             ui.label("+2 Penalty");
                         }
+                        for gap in [4, 11, 24, 49, 99, 499, 999, 1999, 4999] {
+                            let portion = self.state.solves.get(self.state.solve_index..self.state.solves.len());
+                            match portion {
+                                Some(data) => {
+                                    let portion = data.to_vec();
+                                    if portion.len() > gap {
+                                        let average = average(&portion, gap, self.state.ao5_prec);
+                                        ui.label(format!("Ao{}: {}", gap+1, average));
+                                    }
+                                },
+                                None => {},
+                            }
+                        }
                         ui.horizontal(|ui| {
-                                if ui.button("+2").clicked() {
-                                    if !self.state.solves[self.state.solve_index].plus2 {
-                                        self.state.solves[self.state.solve_index].plus2 = true;
-                                        self.state.solves[self.state.solve_index].dnf = false;
-                                        self.state.solves[self.state.solve_index].time = (self.state.solves[self.state.solve_index].time.parse::<f64>().unwrap() + 2.0).to_string();
-                                        self.state.solve_info_copy = format!("{}+2 @ {}", round(self.state.solves[self.state.solve_index].clone().time.parse::<f64>().unwrap() - 2.0, self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
-                                        self.refresh_averages();
-                                    }
+                            if ui.button("+2").clicked() {
+                                if !self.state.solves[self.state.solve_index].plus2 {
+                                    self.state.solves[self.state.solve_index].plus2 = true;
+                                    self.state.solves[self.state.solve_index].dnf = false;
+                                    self.state.solves[self.state.solve_index].time = (self.state.solves[self.state.solve_index].time.parse::<f64>().unwrap() + 2.0).to_string();
+                                    self.state.solve_info_copy = format!("{}+2 @ {}", round(self.state.solves[self.state.solve_index].clone().time.parse::<f64>().unwrap() - 2.0, self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
+                                    self.refresh_averages();
                                 }
-                                if ui.button("DNF").clicked() {
-                                    if !self.state.solves[self.state.solve_index].dnf {
-                                        if self.state.solves[self.state.solve_index].plus2 {
-                                            self.state.solves[self.state.solve_index].time = (self.state.solves[self.state.solve_index].time.parse::<f64>().unwrap() - 2.0).to_string();
-                                        }
-                                        self.state.solves[self.state.solve_index].plus2 = false;
-                                        self.state.solves[self.state.solve_index].dnf = true;
-                                        self.state.solve_info_copy = format!("DNF [{}] @ {}", round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
-                                        self.refresh_averages();
-                                    }
-                                }
-                                if ui.button("OK").clicked() {
+                            }
+                            if ui.button("DNF").clicked() {
+                                if !self.state.solves[self.state.solve_index].dnf {
                                     if self.state.solves[self.state.solve_index].plus2 {
                                         self.state.solves[self.state.solve_index].time = (self.state.solves[self.state.solve_index].time.parse::<f64>().unwrap() - 2.0).to_string();
                                     }
                                     self.state.solves[self.state.solve_index].plus2 = false;
-                                    self.state.solves[self.state.solve_index].dnf = false;
-                                    self.state.solve_info_copy = format!("{} @ {}", round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
+                                    self.state.solves[self.state.solve_index].dnf = true;
+                                    self.state.solve_info_copy = format!("DNF [{}] @ {}", round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
                                     self.refresh_averages();
                                 }
+                            }
+                            if ui.button("OK").clicked() {
+                                if self.state.solves[self.state.solve_index].plus2 {
+                                    self.state.solves[self.state.solve_index].time = (self.state.solves[self.state.solve_index].time.parse::<f64>().unwrap() - 2.0).to_string();
+                                }
+                                self.state.solves[self.state.solve_index].plus2 = false;
+                                self.state.solves[self.state.solve_index].dnf = false;
+                                self.state.solve_info_copy = format!("{} @ {}", round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.solves_prec), self.state.solves[self.state.solve_index].scramble);
+                                self.refresh_averages();
+                            }
+                            if ui.button("DEL").clicked() {
+                                self.state.solves.remove(self.state.solve_index);
+                                self.state.time = round(self.state.solves[self.state.solve_index].time.parse().unwrap(), self.state.prec).to_string();
+                                self.state.solve_info = false;
+                                self.refresh_averages();
+                                self.redraw_solves();
+                            }
                         });
                         ui.label(format!("Scramble: {}", self.state.solves[self.state.solve_index].scramble));
                         ui.horizontal(|ui| {
@@ -870,6 +912,7 @@ impl eframe::App for Cubism {
                                 .selected_text(&self.state.current_tool)
                                 .show_ui(ui, |ui| {
                                     ui.selectable_value(&mut self.state.current_tool, "Plot Times".to_string(), "Plot Times");
+                                    ui.selectable_value(&mut self.state.current_tool, "Script".to_string(), "Script")
                                 });
                         });
                         if self.state.current_tool == "Plot Times".to_string() {
@@ -882,6 +925,46 @@ impl eframe::App for Cubism {
                                 ui.add(egui::Slider::new(&mut self.state.plot_aspect_ratio, 1.0..=6.0));
                             });
                         }
+                        if self.state.current_tool == "Script".to_string() {
+                            ui.separator();
+                            ui.heading("Script");
+                            ui.label("You can access solves by accessing the DATA dictionary");
+                            ui.text_edit_multiline(&mut self.state.script);
+                            if ui.button("Run").clicked() {
+                            }
+                        }
+                    });
+                }
+                if self.state.stats_open == true {
+                    egui::Window::new("Statistics").show(ctx, |ui| {
+                    ui.label(format!("Solves: {}", self.state.solves.len()));
+                    if self.state.ao5.as_str() != "" {
+                        ui.label(format!("Ao5: {}", self.state.ao5));
+                    }
+                    if self.state.ao12.as_str() != "" {
+                        ui.label(format!("Ao12: {}", self.state.ao12));
+                    }
+                    if self.state.ao25.as_str() != "" {
+                        ui.label(format!("Ao25: {}", self.state.ao25));
+                    }
+                    if self.state.ao50.as_str() != "" {
+                        ui.label(format!("Ao50: {}", self.state.ao50));
+                    }
+                    if self.state.ao100.as_str() != "" {
+                        ui.label(format!("Ao100: {}", self.state.ao100));
+                    }
+                    if self.state.ao500.as_str() != "" {
+                        ui.label(format!("Ao500: {}", self.state.ao500));
+                    }
+                    if self.state.ao1000.as_str() != "" {
+                        ui.label(format!("Ao1000: {}", self.state.ao1000));
+                    }
+                    if self.state.ao2000.as_str() != "" {
+                        ui.label(format!("Ao2000: {}", self.state.ao2000));
+                    }
+                    if self.state.ao5000.as_str() != "" {
+                        ui.label(format!("Ao5000: {}", self.state.ao2000));
+                    }
                     });
                 }
             }

@@ -8,20 +8,17 @@
 <head>
     <!-- change this to your project name -->
     <title>Cubism</title>
-    <meta name="description" content="A Speedcubing timer written in rust" />
+    <meta name="description" content="A Speedcubing timer written in Rust" />
     <meta name="author" content="Aityz" />
     <meta name="keywords" content="Rubik's cube, Speedcubing, CSTimer, Timer, Cube timer, Speedcube, Speedcube timer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="application-name" content="Cubism" />
 
-    <!-- config for our rust wasm binary. go to https://trunkrs.dev/assets/#rust for more customization -->
     <link data-trunk rel="rust" data-wasm-opt="2" />
-    <!-- this is the base url relative to which other urls will be constructed. trunk will insert this from the public-url option -->
     <base data-trunk-public-url />
 
     <link data-trunk rel="icon" href="assets/favicon.ico">
 
-    <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-K491EQPYWJ"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
@@ -30,6 +27,8 @@
 
         gtag('config', 'G-K491EQPYWJ');
     </script>
+
+    <script src="https://github.com/josephrocca/clip-image-sorter/blob/main/enable-threads.js"></script>
 
 
     <link data-trunk rel="copy-file" href="assets/sw.js" />
