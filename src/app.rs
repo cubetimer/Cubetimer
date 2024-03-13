@@ -1,10 +1,23 @@
 use chrono::{DateTime, Local, TimeDelta};
 use cubesim::{Cube, Move, MoveVariant};
+use discord_rich_presence::{activity::{self, Assets, Button}, DiscordIpc};
 use rand::Rng;
 use std::collections::HashMap;
 
 use self::scramble::{Cubes, Scrambler};
 mod scramble;
+
+// Wasm detection
+
+#[cfg(target_arch = "wasm32")]
+fn is_wasm() -> bool {
+    true
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_wasm() -> bool {
+    false
+}
 
 fn move_string(movement: cubesim::Move) -> String {
     match movement {
@@ -51,7 +64,6 @@ pub struct SolveStats {
     comment: String,
     plus2: bool,
     dnf: bool,
-    solution: String,
     cube_type: Cubes,
 }
 
@@ -62,7 +74,6 @@ impl Default for SolveStats {
             scramble: "".to_string(),
             timestamp: "".to_string(),
             comment: "".to_string(),
-            solution: "".to_string(),
             plus2: false,
             dnf: false,
             cube_type: Cubes::ThreeByThree,
@@ -113,6 +124,18 @@ pub struct State {
     ao5000: String,   // Average of 5000 solves
     mo3: String,      // Mean of 3 solves
     mean: String,     // Mean of all solves
+    
+    // Best Averages
+    best_ao5: String,
+    best_ao12: String,
+    best_ao25: String,
+    best_ao50: String,
+    best_ao100: String,
+    best_ao500: String,
+    best_ao1000: String,
+    best_ao2000: String,
+    best_ao5000: String,
+    best_mo3: String,
 
     // Solve-related fields
     solves: Vec<SolveStats>, // Vector containing statistics of individual solves
@@ -148,7 +171,8 @@ pub struct State {
     plot_aspect_ratio: f32,   // Aspect ratio for plots
     stats_open: bool,         // Whether to have Stats menu open
     show_left_bar: bool,      // Whether to show the left (main) bar of the screen
-    footer: String,             // Custom footer text (for youtubers etc)
+    footer: String,           // Custom footer text (for youtubers etc)
+    show_footer: bool,
 
     // Puzzle-related fields
     name: String,             // Name of the puzzle
@@ -166,23 +190,44 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            footer: "Cubism by Aityz".to_string(),
+            // Customizable Footer
+            footer: "Cubism by Aityz (This text is customizable)".to_string(),
+
+            // Cubes Configuration
             show_scramble: true,
             cube_type_old: Cubes::ThreeByThree,
             cube_type: Cubes::ThreeByThree,
+            scramble_text: "".to_string(),
+
+            // Scramble & Solution
             c_scramble: "".to_string(),
             c_solution: "".to_string(),
             solution: "".to_string(),
+
+            // Widget & Tools
             widget: [150, 150, 150],
             show_tools: true,
+
+            // Plotting
             plottable: vec![],
+            plot_aspect_ratio: 2.0,
+
+            // First Load 
             download: true,
-            solve_info_copy: "".to_string(),
+            used: false,
+
+            // Solve Info
+            solve_index: 0,
             solve_info: false,
-            scramble_text: "".to_string(),
-            show_solve: false,
+            solve_info_copy: "".to_string(),
+
+            // Timing
             time: "0.00".to_string(),
-            scramble: "".to_string(),
+            starttime: Local::now(),
+            timeron: false,
+            debounce: Local::now(),
+
+            // Averages
             ao5: "".to_string(),
             ao12: "".to_string(),
             ao25: "".to_string(),
@@ -194,36 +239,59 @@ impl Default for State {
             ao5000: "".to_string(),
             mo3: "".to_string(),
             mean: "".to_string(),
-            starttime: Local::now(),
-            timeron: false,
-            debounce: Local::now(),
+
+            // Best Averages
+            best_ao5: "".to_string(),
+            best_ao12: "".to_string(),
+            best_ao25: "".to_string(),
+            best_ao50: "".to_string(),
+            best_ao100: "".to_string(),
+            best_ao500: "".to_string(),
+            best_ao1000: "".to_string(),
+            best_ao2000: "".to_string(),
+            best_ao5000: "".to_string(),
+            best_mo3: "".to_string(),
+
+            // Solves & Importing
             solves: vec![],
-            settings_open: false,
             importing: false,
             imported_data: "".to_string(),
             imported_fail: "".to_string(),
+
+            // Precision Settings
             prec: 2,
             ao5_prec: 3,
-            used: false,
             solves_prec: 2,
+            old_prec: 2,
             old_ao5_prec: 3,
             old_solves_prec: 2,
-            old_prec: 2,
+
+            // Formatting
             fmt_solves: vec![],
+
+            // UI Colors
             background: [255, 255, 255],
             window: [255, 255, 255],
             button: [255, 255, 255],
             titlebar: [255, 255, 255],
             outline: [0, 0, 0],
             text: [0, 0, 0],
+
+            // Visual Options
             outline_w: 0.5,
-            solve_index: 0,
+            show_solve: false,
+            show_footer: true,
             show_solve_info: true,
             current_tool: "Select Tool".to_string(),
-            plot_aspect_ratio: 2.0,
+
+            // Application Settings
             name: "Default".to_string(),
             stats_open: false,
             show_left_bar: true,
+            settings_open: false,
+
+            // Scramble
+            scramble: "".to_string(),
         }
     }
 }
@@ -297,6 +365,8 @@ pub struct Cubism {
     sessions: HashMap<String, State>,
     #[serde(skip)]
     set_font: bool,
+    #[serde(skip)]
+    started: bool,
 }
 
 impl Default for Cubism {
@@ -304,7 +374,8 @@ impl Default for Cubism {
         Self {
             sessions: HashMap::new(),
             state: State::default(),
-            set_font: false
+            set_font: false,
+            started: false,
         }
     }
 }
@@ -361,34 +432,74 @@ impl Cubism {
         let len = self.state.solves.len();
         let solves = &self.state.solves;
         if len > 2 {
-            self.state.mo3 = average(&solves, 2, self.state.ao5_prec);
+            let mo3 = average(&solves, 2, self.state.ao5_prec);
+            if self.state.mo3 > mo3 {
+                self.state.best_mo3 = mo3.clone();
+            }
+            self.state.mo3 = mo3;
         }
         if len > 4 {
-            self.state.ao5 = average(&solves, 4, self.state.ao5_prec);
+            let ao5 = average(&solves, 4, self.state.ao5_prec);
+            if self.state.ao5 > ao5 {
+                self.state.best_ao5 = ao5.clone();
+            }
+            self.state.ao5 = ao5;
         }
         if len > 11 {
-            self.state.ao12 = average(&solves, 11, self.state.ao5_prec);
+            let ao12 = average(&solves, 11, self.state.ao5_prec);
+            if self.state.ao12 > ao12 {
+                self.state.best_ao12 = ao12.clone();
+            }
+            self.state.ao12 = ao12;
         }
         if len > 24 {
-            self.state.ao25 = average(&solves, 24, self.state.ao5_prec);
+            let ao25 = average(&solves, 24, self.state.ao5_prec);
+            if self.state.ao25 > ao25 {
+                self.state.best_ao25 = ao25.clone();
+            }
+            self.state.ao25 = ao25;
         }
         if len > 49 {
-            self.state.ao50 = average(&solves, 49, self.state.ao5_prec);
+            let ao50 = average(&solves, 49, self.state.ao5_prec);
+            if self.state.ao50 > ao50 {
+                self.state.best_ao50 = ao50.clone();
+            }
+            self.state.ao50 = ao50;
         }
         if len > 99 {
-            self.state.ao100 = average(&solves, 99, self.state.ao5_prec);
+            let ao100 = average(&solves, 99, self.state.ao5_prec);
+            if self.state.ao100 > ao100 {
+                self.state.best_ao100 = ao100.clone();
+            }
+            self.state.ao100 = ao100;
         }
         if len > 499 {
-            self.state.ao500 = average(&solves, 499, self.state.ao5_prec);
+            let ao500 = average(&solves, 499, self.state.ao5_prec);
+            if self.state.ao500 > ao500 {
+                self.state.best_ao500 = ao500.clone();
+            }
+            self.state.ao500 = ao500;
         }
         if len > 999 {
-            self.state.ao1000 = average(&solves, 999, self.state.ao5_prec);
+            let ao1000 = average(&solves, 999, self.state.ao5_prec);
+            if self.state.ao1000 > ao1000 {
+                self.state.best_ao1000 = ao1000.clone();
+            }
+            self.state.ao1000 = ao1000;
         }
         if len > 1999 {
-            self.state.ao2000 = average(&solves, 1999, self.state.ao5_prec);
+            let ao2000 = average(&solves, 1999, self.state.ao5_prec);
+            if self.state.ao2000 > ao2000 {
+                self.state.best_ao2000 = ao2000.clone();
+            }
+            self.state.ao2000 = ao2000;
         }
         if len > 4999 {
-            self.state.ao5000 = average(&solves, 4999, self.state.ao5_prec);
+            let ao5000 = average(&solves, 4999, self.state.ao5_prec);
+            if self.state.ao5000 > ao5000 {
+                self.state.best_ao5000 = ao5000.clone();
+            }
+            self.state.ao5000 = ao5000;
         }
     }
     fn redraw_solves(&mut self) {
@@ -414,6 +525,25 @@ impl eframe::App for Cubism {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.started == false {
+            if is_wasm() == false {
+                std::thread::spawn(move || {
+                    let mut client = discord_rich_presence::DiscordIpcClient::new("1217391447695818824").unwrap();
+                    client.connect().unwrap();
+                    loop {
+                        client.set_activity(activity::Activity::new()
+                            .details("A speedcubing timer built in Rust")
+                            .state("Try it out at cubetimer.github.io")
+                            .assets(Assets::new().
+                                large_image("logo")
+                                .large_text("Cubism Timer")) 
+                        ).unwrap();
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                });
+            }
+            self.started = true;
+        }
         if self.set_font == false {
             let mut definitions = egui::FontDefinitions::default();
             definitions.font_data.insert("font".to_owned(), egui::FontData::from_static(include_bytes!("../assets/font.ttf")));
@@ -510,14 +640,16 @@ impl eframe::App for Cubism {
         }
 
         if self.state.timeron == false {
-            egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-                ui.with_layout(
-                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| {
-                        ui.label(format!("{}", self.state.footer));
-                    },
-                );
-            });
+            if self.state.show_footer == true {
+                egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+                    ui.with_layout(
+                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            ui.label(format!("{}", self.state.footer));
+                        },
+                    );
+                });
+            }
         }
 
         if self.state.timeron == false {
@@ -615,6 +747,16 @@ impl eframe::App for Cubism {
                                 self.state.show_scramble = false;
                             } else {
                                 self.state.show_scramble = true;
+                            }
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Show Footer: ");
+                        if ui.radio(self.state.show_footer, "").clicked() {
+                            if self.state.show_footer == true {
+                                self.state.show_footer = false;
+                            } else {
+                                self.state.show_footer = true;
                             }
                         }
                     });
@@ -1012,9 +1154,6 @@ impl eframe::App for Cubism {
                         });
                         if dont_redraw == false {
                         ui.label(format!("Scramble: {}", self.state.solves[self.state.solve_index].scramble));
-                        if self.state.solves[self.state.solve_index].solution != "".to_string() {
-                            ui.label(format!("Solution: {}", self.state.solves[self.state.solve_index].solution));
-                        }
                         ui.horizontal(|ui| {
                             ui.label("Comment: ");
                             ui.text_edit_singleline(&mut self.state.solves[self.state.solve_index].comment);
@@ -1080,34 +1219,44 @@ impl eframe::App for Cubism {
                     }
                     ui.separator();
                     if self.state.mo3.as_str() != "" {
-                        ui.label(format!("Mo3: {}", self.state.mo3));
+                        ui.label(format!("Mo3: {}", self.state.mo3))
+                            .on_hover_text(format!("Best Mo3: {}", self.state.best_mo3));
                     }
                     if self.state.ao5.as_str() != "" {
-                        ui.label(format!("Ao5: {}", self.state.ao5));
+                        ui.label(format!("Ao5: {}", self.state.ao5))
+                            .on_hover_text(format!("Best Ao5: {}", self.state.best_ao5));
                     }
                     if self.state.ao12.as_str() != "" {
-                        ui.label(format!("Ao12: {}", self.state.ao12));
+                        ui.label(format!("Ao12: {}", self.state.ao12))
+                            .on_hover_text(format!("Best Ao12: {}", self.state.best_ao12));
                     }
                     if self.state.ao25.as_str() != "" {
-                        ui.label(format!("Ao25: {}", self.state.ao25));
+                        ui.label(format!("Ao25: {}", self.state.ao25))
+                            .on_hover_text(format!("Best Ao25: {}", self.state.best_ao25));
                     }
                     if self.state.ao50.as_str() != "" {
-                        ui.label(format!("Ao50: {}", self.state.ao50));
+                        ui.label(format!("Ao50: {}", self.state.ao50))
+                            .on_hover_text(format!("Best Ao50: {}", self.state.best_ao50));
                     }
                     if self.state.ao100.as_str() != "" {
-                        ui.label(format!("Ao100: {}", self.state.ao100));
+                        ui.label(format!("Ao100: {}", self.state.ao100))
+                            .on_hover_text(format!("Best Ao100: {}", self.state.best_ao100));
                     }
                     if self.state.ao500.as_str() != "" {
-                        ui.label(format!("Ao500: {}", self.state.ao500));
+                        ui.label(format!("Ao500: {}", self.state.ao500))
+                            .on_hover_text(format!("Best Ao500: {}", self.state.best_ao500));
                     }
                     if self.state.ao1000.as_str() != "" {
-                        ui.label(format!("Ao1000: {}", self.state.ao1000));
+                        ui.label(format!("Ao1000: {}", self.state.ao1000))
+                            .on_hover_text(format!("Best Ao1000: {}", self.state.best_ao1000));
                     }
                     if self.state.ao2000.as_str() != "" {
-                        ui.label(format!("Ao2000: {}", self.state.ao2000));
+                        ui.label(format!("Ao2000: {}", self.state.ao2000))
+                            .on_hover_text(format!("Best Ao2000: {}", self.state.best_ao2000));
                     }
                     if self.state.ao5000.as_str() != "" {
-                        ui.label(format!("Ao5000: {}", self.state.ao2000));
+                        ui.label(format!("Ao5000: {}", self.state.ao2000))
+                            .on_hover_text(format!("Best Ao5000: {}", self.state.best_ao5000));
                     }
                     });
                 }
@@ -1144,24 +1293,13 @@ impl eframe::App for Cubism {
                                                 self.state.solves_prec
                                             );
                                             let solve_: SolveStats;
-                                            if self.state.cube_type == Cubes::ThreeByThree {
                                                 solve_ = SolveStats {
                                                     time: rawtime.to_string(),
                                                     scramble: self.state.scramble.clone(),
                                                     timestamp: timestamp(),
-                                                    solution: solve(self.state.scramble.clone()),
                                                     cube_type: self.state.cube_type,
                                                     ..SolveStats::default()
                                                 };
-                                            } else {
-                                                solve_ = SolveStats {
-                                                    time: rawtime.to_string(),
-                                                    scramble: self.state.scramble.clone(),
-                                                    timestamp: timestamp(),
-                                                    cube_type: self.state.cube_type,
-                                                    ..SolveStats::default()
-                                                }
-                                            }
                                             self.state.solves.insert(0, solve_);
 
                                             self.state.time = timertime.to_string();
