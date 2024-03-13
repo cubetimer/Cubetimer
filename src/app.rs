@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local, TimeDelta};
 use cubesim::{Cube, Move, MoveVariant};
-use discord_rich_presence::{activity::{self, Assets, Button}, DiscordIpc};
+#[cfg(not(target_arch = "wasm32"))]
+use discord_rich_presence::{activity::{self, Assets}, DiscordIpc};
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -516,6 +517,23 @@ impl Cubism {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn rpc() {
+    let mut client = discord_rich_presence::DiscordIpcClient::new("1217391447695818824").unwrap();
+    client.connect().unwrap();
+    loop {
+        client.set_activity(activity::Activity::new()
+            .details("A speedcubing timer built in Rust")
+            .state("Try it out at cubetimer.github.io")
+            .assets(Assets::new().
+                large_image("logo")
+                .large_text("Cubism Timer")) 
+        ).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+
+}
+
 impl eframe::App for Cubism {
     fn persist_egui_memory(&self) -> bool {
         true
@@ -527,20 +545,8 @@ impl eframe::App for Cubism {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.started == false {
             if is_wasm() == false {
-                std::thread::spawn(move || {
-                    let mut client = discord_rich_presence::DiscordIpcClient::new("1217391447695818824").unwrap();
-                    client.connect().unwrap();
-                    loop {
-                        client.set_activity(activity::Activity::new()
-                            .details("A speedcubing timer built in Rust")
-                            .state("Try it out at cubetimer.github.io")
-                            .assets(Assets::new().
-                                large_image("logo")
-                                .large_text("Cubism Timer")) 
-                        ).unwrap();
-                        std::thread::sleep(std::time::Duration::from_secs(5));
-                    }
-                });
+                #[cfg(not(target_arch = "wasm32"))]
+                rpc();
             }
             self.started = true;
         }
