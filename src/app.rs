@@ -524,16 +524,18 @@ fn rpc() {
     match connection {
         Err(e) => println!("{}", e),
         Ok(_) => {
-            loop {
-                client.set_activity(activity::Activity::new()
-                    .details("A speedcubing timer built in Rust")
-                    .state("Try it out at cubetimer.github.io")
-                    .assets(Assets::new().
-                        large_image("logo")
-                        .large_text("Cubism Timer")) 
-                ).unwrap();
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            }
+            std::thread::spawn(move || {
+                loop {
+                    client.set_activity(activity::Activity::new()
+                        .details("A speedcubing timer built in Rust")
+                        .state("Try it out at cubetimer.github.io")
+                        .assets(Assets::new().
+                            large_image("logo")
+                            .large_text("Cubism Timer")) 
+                    ).unwrap();
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+            });
         }
     }
 
